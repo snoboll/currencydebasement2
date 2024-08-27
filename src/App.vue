@@ -1,348 +1,96 @@
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed, watch } from "vue";
+import axios from "axios";
 import * as d3 from "d3";
 import * as topojson from "topojson-client";
+import goldPrices from "./goldPrices.json";
+import currencyData from "./currencyData.json";
+import currencyCodeMap from "./currencyCodeMap.json";
 
 const worldMap = ref(null);
-const currencyData = ref({});
+const comparisonBase = ref("USD");
+const selectedYear = ref("2023");
+const comparisonYear = ref("1973");
+const loading = ref(false);
+const currentData = ref({});
 
-async function fetchCurrencyData() {
-  const currencies = [
-    "EUR",
-    "GBP",
-    "JPY",
-    "CHF",
-    "CAD",
-    "AUD",
-    "NZD",
-    "CNY",
-    "HKD",
-    "SGD",
-    "INR",
-    "MXN",
-    "BRL",
-    "ZAR",
-    "RUB",
-    "SEK",
-    "NOK",
-    "DKK",
-    "PLN",
-    "TRY",
-    "KRW",
-    "TWD",
-    "MYR",
-    "THB",
-    "IDR",
-    "PHP",
-    "AED",
-    "SAR",
-    "ILS",
-    "EGP",
-    "COP",
-    "CLP",
-    "ARS",
-    "PEN",
-    "CZK",
-    "HUF",
-    "RON",
-    "ISK",
-    "BGN",
-    "HRK",
-    "RSD",
-    "UAH",
-    "KZT",
-    "VND",
-    "JOD",
-    "BHD",
-    "QAR",
-    "KWD",
-    "OMR",
-    "PKR",
-    "LKR",
-    "MMK",
-    "NPR",
-    "GHS",
-    "KES",
-    "NGN",
-    "TZS",
-    "UGX",
-    "BDT",
-    "MAD",
-  ];
-  const promises = currencies.map((currency) =>
-    fetch(`/api/v8/finance/chart/${currency}USD=X?interval=1d&range=1y`)
-      .then((response) => response.json())
-      .catch((error) => {
-        console.error(`Error fetching data for ${currency}:`, error);
-        return null;
-      })
-  );
+const baseOptions = [
+  { value: "USD", label: "US Dollar" },
+  { value: "GOLD", label: "Gold" },
+];
 
-  try {
-    const results = await Promise.all(promises);
-    const performanceData = {};
-    results.forEach((result, index) => {
-      if (
-        result &&
-        result.chart &&
-        result.chart.result &&
-        result.chart.result[0] &&
-        result.chart.result[0].indicators &&
-        result.chart.result[0].indicators.quote &&
-        result.chart.result[0].indicators.quote[0] &&
-        result.chart.result[0].indicators.quote[0].close
-      ) {
-        const prices = result.chart.result[0].indicators.quote[0].close;
-        const startPrice = prices[0];
-        const endPrice = prices[prices.length - 1];
-        if (startPrice && endPrice) {
-          const performance = ((endPrice - startPrice) / startPrice) * 100;
-          performanceData[currencies[index]] = performance;
-        }
-      } else {
-        console.warn(`No valid data for ${currencies[index]}`);
-      }
-    });
-    currencyData.value = performanceData;
-  } catch (error) {
-    console.error("Error processing currency data:", error);
+const yearOptions = computed(() => {
+  const years = Object.keys(goldPrices).sort((a, b) => a - b);
+  return years.filter((year) => parseInt(year) <= parseInt(selectedYear.value));
+});
+
+function getCurrencyCode(countryCode) {
+  return currencyCodeMap[countryCode] || "Unknown";
+}
+
+function getPerformance(currencyCode) {
+  const yearData = currentData.value;
+  if (!yearData) return null;
+
+  if (comparisonBase.value === "USD") {
+    return yearData[currencyCode] || null;
+  } else {
+    const usdPerformance = yearData[currencyCode] || 0;
+    const goldPerformance = goldPrices[selectedYear.value] || 0;
+    return ((1 + usdPerformance / 100) / (1 + goldPerformance / 100) - 1) * 100;
   }
 }
 
-function getCurrencyCode(countryCode) {
-  const currencyMap = {
-    "004": "AFN", // Afghanistan
-    "008": "ALL", // Albania
-    "012": "DZD", // Algeria
-    "020": "AND", // Andorra
-    "024": "AOA", // Angola
-    "028": "XCD", // Antigua and Barbuda
-    "032": "ARS", // Argentina
-    "051": "AMD", // Armenia
-    "036": "AUD", // Australia
-    "040": "EUR", // Austria
-    "031": "AZN", // Azerbaijan
-    "044": "BSD", // Bahamas
-    "048": "BHD", // Bahrain
-    "050": "BDT", // Bangladesh
-    "052": "BBD", // Barbados
-    112: "BYN", // Belarus
-    "056": "EUR", // Belgium
-    "084": "BZD", // Belize
-    204: "XOF", // Benin
-    "064": "BTN", // Bhutan
-    "068": "BOB", // Bolivia
-    "070": "BAM", // Bosnia and Herzegovina
-    "072": "BWP", // Botswana
-    "076": "BRL", // Brazil
-    "096": "BND", // Brunei
-    100: "BGN", // Bulgaria
-    854: "BIF", // Burundi
-    116: "KHR", // Cambodia
-    120: "XAF", // Cameroon
-    124: "CAD", // Canada
-    132: "CVE", // Cape Verde
-    140: "XAF", // Central African Republic
-    148: "XAF", // Chad
-    152: "CLP", // Chile
-    156: "CNY", // China
-    170: "COP", // Colombia
-    174: "KMF", // Comoros
-    178: "XAF", // Congo
-    180: "CDF", // Democratic Republic of the Congo
-    188: "CRC", // Costa Rica
-    191: "HRK", // Croatia
-    192: "CUP", // Cuba
-    196: "CYP", // Cyprus
-    203: "CZK", // Czech Republic
-    208: "DKK", // Denmark
-    262: "DJF", // Djibouti
-    214: "DOP", // Dominican Republic
-    218: "USD", // Ecuador
-    818: "EGP", // Egypt
-    222: "SVC", // El Salvador
-    226: "XAF", // Equatorial Guinea
-    232: "ERN", // Eritrea
-    233: "EUR", // Estonia
-    231: "ETB", // Ethiopia
-    242: "FJD", // Fiji
-    246: "EUR", // Finland
-    250: "EUR", // France
-    266: "XAF", // Gabon
-    270: "GMD", // Gambia
-    268: "GEL", // Georgia
-    276: "EUR", // Germany
-    288: "GHS", // Ghana
-    300: "EUR", // Greece
-    320: "GTQ", // Guatemala
-    324: "GNF", // Guinea
-    624: "GWP", // Guinea-Bissau
-    328: "GYD", // Guyana
-    332: "HTG", // Haiti
-    340: "HNL", // Honduras
-    348: "HUF", // Hungary
-    352: "ISK", // Iceland
-    356: "INR", // India
-    360: "IDR", // Indonesia
-    364: "IRR", // Iran
-    368: "IQD", // Iraq
-    372: "EUR", // Ireland
-    376: "ILS", // Israel
-    380: "EUR", // Italy
-    388: "JMD", // Jamaica
-    392: "JPY", // Japan
-    400: "JOD", // Jordan
-    398: "KZT", // Kazakhstan
-    404: "KES", // Kenya
-    408: "KPW", // North Korea
-    410: "KRW", // South Korea
-    414: "KWD", // Kuwait
-    417: "KGS", // Kyrgyzstan
-    418: "LAK", // Laos
-    428: "EUR", // Latvia
-    422: "LBP", // Lebanon
-    426: "LSL", // Lesotho
-    430: "LRD", // Liberia
-    434: "LYD", // Libya
-    438: "CHF", // Liechtenstein
-    440: "EUR", // Lithuania
-    442: "EUR", // Luxembourg
-    807: "MKD", // North Macedonia
-    450: "MGF", // Madagascar
-    454: "MWK", // Malawi
-    458: "MYR", // Malaysia
-    462: "MVR", // Maldives
-    466: "XOF", // Mali
-    470: "EUR", // Malta
-    478: "MRU", // Mauritania
-    480: "MUR", // Mauritius
-    484: "MXN", // Mexico
-    498: "MDL", // Moldova
-    492: "EUR", // Monaco
-    496: "MNT", // Mongolia
-    499: "EUR", // Montenegro
-    504: "MAD", // Morocco
-    508: "MZN", // Mozambique
-    104: "MMK", // Myanmar
-    516: "NAD", // Namibia
-    524: "NPR", // Nepal
-    528: "EUR", // Netherlands
-    554: "NZD", // New Zealand
-    558: "NIO", // Nicaragua
-    562: "XOF", // Niger
-    566: "NGN", // Nigeria
-    578: "NOK", // Norway
-    512: "OMR", // Oman
-    586: "PKR", // Pakistan
-    275: "ILS", // Palestine
-    591: "PAB", // Panama
-    598: "PGK", // Papua New Guinea
-    600: "PYG", // Paraguay
-    604: "PEN", // Peru
-    608: "PHP", // Philippines
-    616: "PLN", // Poland
-    620: "EUR", // Portugal
-    634: "QAR", // Qatar
-    642: "RON", // Romania
-    643: "RUB", // Russia
-    646: "RWF", // Rwanda
-    659: "XCD", // Saint Kitts and Nevis
-    662: "XCD", // Saint Lucia
-    670: "XCD", // Saint Vincent and the Grenadines
-    882: "WST", // Samoa
-    674: "EUR", // San Marino
-    678: "STN", // Sao Tome and Principe
-    682: "SAR", // Saudi Arabia
-    686: "XOF", // Senegal
-    688: "RSD", // Serbia
-    690: "SCR", // Seychelles
-    694: "SLL", // Sierra Leone
-    702: "SGD", // Singapore
-    703: "EUR", // Slovakia
-    705: "EUR", // Slovenia
-    "090": "SBD", // Solomon Islands
-    706: "SOS", // Somalia
-    710: "ZAR", // South Africa
-    724: "EUR", // Spain
-    144: "LKR", // Sri Lanka
-    729: "SDG", // Sudan
-    740: "SRD", // Suriname
-    748: "SZL", // Eswatini (Swaziland)
-    752: "SEK", // Sweden
-    756: "CHF", // Switzerland
-    760: "SYP", // Syria
-    158: "TWD", // Taiwan
-    762: "TJS", // Tajikistan
-    834: "TZS", // Tanzania
-    764: "THB", // Thailand
-    626: "XOF", // Togo
-    776: "TOP", // Tonga
-    780: "TTD", // Trinidad and Tobago
-    788: "TND", // Tunisia
-    792: "TRY", // Turkey
-    795: "TMT", // Turkmenistan
-    800: "UGX", // Uganda
-    804: "UAH", // Ukraine
-    784: "AED", // United Arab Emirates
-    826: "GBP", // United Kingdom
-    840: "USD", // United States
-    858: "UYU", // Uruguay
-    860: "UZS", // Uzbekistan
-    548: "VUV", // Vanuatu
-    862: "VES", // Venezuela
-    704: "VND", // Vietnam
-    887: "YER", // Yemen
-    894: "ZMW", // Zambia
-    716: "ZWL", // Zimbabwe
-  };
-  return currencyMap[countryCode] || "N/A";
-}
-
-function getCurrencyPerformance(currencyCode) {
-  return currencyData.value[currencyCode] || null;
-}
-
-const colorScale = d3
-  .scaleLinear()
-  .domain([-10, 0, 10])
-  .range(["#dc3545", "#dc3545", "#28a745"])
-  .clamp(true);
+const colorScale = computed(() => {
+  return d3
+    .scaleLinear()
+    .domain([-10, 0, 10])
+    .range(["#dc3545", "#dc3545", "#28a745"])
+    .clamp(true);
+});
 
 function getCountryColor(performance) {
   if (performance === null) return "#000000";
-  return colorScale(performance);
+  return colorScale.value(performance);
 }
 
-onMounted(async () => {
-  await fetchCurrencyData();
+let svg, path, tooltip;
 
+onMounted(() => {
+  drawMap();
+});
+
+function drawMap() {
   const width = 960;
   const height = 500;
 
-  const svg = d3
-    .select(worldMap.value)
-    .attr("width", width)
-    .attr("height", height);
+  svg = d3.select(worldMap.value).attr("width", width).attr("height", height);
 
   const projection = d3
     .geoMercator()
     .scale(140)
     .translate([width / 2, height / 1.4]);
 
-  const path = d3.geoPath().projection(projection);
+  path = d3.geoPath().projection(projection);
 
-  const world = await d3.json(
-    "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json"
-  );
-  const countries = topojson.feature(world, world.objects.countries);
-
-  const tooltip = d3
+  tooltip = d3
     .select("body")
     .append("div")
     .attr("class", "tooltip")
     .style("opacity", 0)
     .style("position", "absolute")
     .style("pointer-events", "none");
+
+  d3.json(
+    "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json"
+  ).then((world) => {
+    const countries = topojson.feature(world, world.objects.countries);
+    updateMap(countries);
+  });
+}
+
+function updateMap(countries) {
+  svg.selectAll("path").remove();
 
   svg
     .selectAll("path")
@@ -353,12 +101,12 @@ onMounted(async () => {
     .attr("class", "country")
     .attr("fill", (d) => {
       const currencyCode = getCurrencyCode(d.id);
-      const performance = getCurrencyPerformance(currencyCode);
+      const performance = getPerformance(currencyCode);
       return getCountryColor(performance);
     })
     .on("mousemove", (event, d) => {
       const currencyCode = getCurrencyCode(d.id);
-      const performance = getCurrencyPerformance(currencyCode);
+      const performance = getPerformance(currencyCode);
 
       tooltip.transition().duration(200).style("opacity", 0.9);
       tooltip
@@ -369,9 +117,9 @@ onMounted(async () => {
           <div class="performance">
             ${
               performance !== null
-                ? `${performance > 0 ? "+" : ""}${performance.toFixed(
-                    2
-                  )}% vs USD`
+                ? `${performance > 0 ? "+" : ""}${performance.toFixed(2)}% vs ${
+                    comparisonBase.value
+                  }`
                 : "No data"
             }
           </div>
@@ -383,21 +131,166 @@ onMounted(async () => {
     .on("mouseout", () => {
       tooltip.transition().duration(500).style("opacity", 0);
     });
+}
+
+watch([comparisonBase, selectedYear, comparisonYear], async () => {
+  await updateCurrentData();
+  d3.json(
+    "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json"
+  ).then((world) => {
+    const countries = topojson.feature(world, world.objects.countries);
+    updateMap(countries);
+  });
+});
+
+async function updateCurrentData() {
+  const currentYearData = await fetchCurrencyData(selectedYear.value);
+  const comparisonYearData = await fetchCurrencyData(comparisonYear.value);
+  const currentGoldPrice = await fetchGoldPrice(selectedYear.value);
+  const comparisonGoldPrice = await fetchGoldPrice(comparisonYear.value);
+
+  if (
+    currentYearData &&
+    comparisonYearData &&
+    currentGoldPrice &&
+    comparisonGoldPrice
+  ) {
+    currentData.value = Object.fromEntries(
+      Object.keys(currentYearData).map((currency) => {
+        const currentPerformance = currentYearData[currency] || 0;
+        const comparisonPerformance = comparisonYearData[currency] || 0;
+        let relativePerformance;
+
+        if (comparisonBase.value === "USD") {
+          relativePerformance =
+            ((1 + currentPerformance / 100) /
+              (1 + comparisonPerformance / 100) -
+              1) *
+            100;
+        } else {
+          const currentGoldPerformance =
+            (currentGoldPrice / goldPrices["1973"] - 1) * 100;
+          const comparisonGoldPerformance =
+            (comparisonGoldPrice / goldPrices["1973"] - 1) * 100;
+          relativePerformance =
+            ((1 + currentPerformance / 100) /
+              (1 + currentGoldPerformance / 100) /
+              ((1 + comparisonPerformance / 100) /
+                (1 + comparisonGoldPerformance / 100)) -
+              1) *
+            100;
+        }
+
+        return [currency, relativePerformance];
+      })
+    );
+  }
+}
+
+async function fetchCurrencyData(year) {
+  try {
+    const response = await axios.get(`/api/currency-data/${year}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching currency data for ${year}:`, error);
+    return null;
+  }
+}
+
+async function fetchGoldPrice(year) {
+  try {
+    const response = await axios.get(`/api/gold-price/${year}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching gold price for ${year}:`, error);
+    return null;
+  }
+}
+
+onMounted(async () => {
+  await updateCurrentData();
+  drawMap();
 });
 </script>
 
 <template>
   <div id="app">
+    <div class="controls">
+      <div class="control-group">
+        <label for="comparisonBase">Compare against:</label>
+        <select id="comparisonBase" v-model="comparisonBase">
+          <option
+            v-for="option in baseOptions"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }}
+          </option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="selectedYear">Current year:</label>
+        <select id="selectedYear" v-model="selectedYear">
+          <option v-for="year in yearOptions" :key="year" :value="year">
+            {{ year }}
+          </option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="comparisonYear">Comparison year:</label>
+        <input
+          type="range"
+          id="comparisonYear"
+          v-model="comparisonYear"
+          :min="yearOptions[0]"
+          :max="selectedYear"
+          step="1"
+        />
+        <span>{{ comparisonYear }}</span>
+      </div>
+    </div>
+    <div v-if="loading" class="loading">Loading...</div>
     <svg ref="worldMap"></svg>
   </div>
 </template>
 
 <style>
 #app {
-  max-width: 1280px;
+  font-family: Arial, sans-serif;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 2rem;
-  font-weight: normal;
+  padding: 20px;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+label {
+  font-weight: bold;
+}
+
+select,
+input[type="range"] {
+  width: 200px;
+}
+
+.loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 24px;
+  font-weight: bold;
 }
 
 .country {
