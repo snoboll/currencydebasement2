@@ -153,7 +153,7 @@ function getCurrencyCode(countryCode) {
     188: "CRC", // Costa Rica
     191: "HRK", // Croatia
     192: "CUP", // Cuba
-    196: "EUR", // Cyprus
+    196: "CYP", // Cyprus
     203: "CZK", // Czech Republic
     208: "DKK", // Denmark
     262: "DJF", // Djibouti
